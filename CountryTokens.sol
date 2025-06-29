@@ -22,7 +22,7 @@ contract CountryTokens is ERC1155, ERC1155Supply, Ownable, Pausable, ReentrancyG
     uint256 public constant MAX_PURCHASE_AMOUNT = 1e18; // Max tokens per transaction
     uint256 public constant MAX_COUNTRIES = 100; // Maximum number of countries
     uint256 public constant MAX_TREASURY_BALANCE = 1e30; // Maximum treasury balance per country
-    IERC20 public constant HELLO = IERC20(0xEeB3f1C0Deff39657d8eed1ac10Af7c57B295C63);
+    IERC20 public constant HELLO = IERC20(0x20979ed939BEeB5980215Be85f2B292abeAfBD3E);
     uint256 public constant ONE = 1e18; // fixed-point precision
     uint256 private constant PRICE_RATE = 1000500000000000000; // 1.0005 * 1e18
 
@@ -142,7 +142,13 @@ contract CountryTokens is ERC1155, ERC1155Supply, Ownable, Pausable, ReentrancyG
     }
 
     // Buy tokens for a country
-    function buy(uint256 countryId, uint256 amount, address referrer) external whenNotPaused nonReentrant {
+    /// @return totalCostHELLO  Total HELLO transferred from the buyer (baseCost + all fees).
+    function buy(uint256 countryId, uint256 amount, address referrer)
+        external
+        whenNotPaused
+        nonReentrant
+        returns (uint256 totalCostHELLO)
+    {
         require(countryId >= 1 && countryId <= totalCountries, "Invalid country ID");
         require(amount > 0, "Amount must be greater than zero");
         require(amount <= MAX_PURCHASE_AMOUNT, "Amount exceeds max purchase limit");
@@ -203,10 +209,19 @@ contract CountryTokens is ERC1155, ERC1155Supply, Ownable, Pausable, ReentrancyG
         _mint(msg.sender, countryId, amount, "");
 
         emit TokensBought(countryId, msg.sender, amount, totalCost, dynamicFee, devFee);
+
+        totalCostHELLO = totalCost;
+        return totalCostHELLO;
     }
 
     // Sell tokens for a country
-    function sell(uint256 countryId, uint256 amount) external whenNotPaused nonReentrant {
+    /// @return helloReceived  Net HELLO the seller receives after all fees.
+    function sell(uint256 countryId, uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+        returns (uint256 helloReceived)
+    {
         require(countryId >= 1 && countryId <= totalCountries, "Invalid country ID");
         require(amount > 0, "Amount must be greater than zero");
         require(amount <= MAX_PURCHASE_AMOUNT, "Amount exceeds max sell limit");
@@ -268,6 +283,9 @@ contract CountryTokens is ERC1155, ERC1155Supply, Ownable, Pausable, ReentrancyG
         emit FundsSent(msg.sender, netAmount);
 
         emit TokensSold(countryId, msg.sender, amount, netAmount, dynamicFee, devFee);
+
+        helloReceived = netAmount;
+        return helloReceived;
     }
 
     // Withdraw treasury funds (only by game contract)
@@ -399,10 +417,12 @@ contract CountryTokens is ERC1155, ERC1155Supply, Ownable, Pausable, ReentrancyG
         uint256 term0 = _powFixed(r, start);
         // factor = r^len
         uint256 factor = _powFixed(r, len);
-        // numerator = term0 * (factor - ONE) / ONE  (fixed-point multiply)
-        uint256 numerator = (term0 * (factor - ONE)) / ONE;
-        uint256 denominator = r - ONE;
-        return numerator / denominator; // still 1e18 scaled
+        // We want the result to stay 1e18-scaled. Removing the premature
+        // division by ONE keeps the extra 1e18 factor which is cancelled by
+        // the denominator (also 1e18-scaled).
+        uint256 numerator = term0 * (factor - ONE);      // 1e36-scaled
+        uint256 denominator = (r - ONE);                 // 1e18-scaled
+        return numerator / denominator;                  // back to 1e18-scaled
     }
 
     /// @notice Batched ERC-1155 balance lookup. Returns the caller's unstaked
