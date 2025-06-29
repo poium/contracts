@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
@@ -36,4 +35,4 @@ contract CountryHead is ERC721, Ownable {
     function _baseURI() internal view override returns (string memory) {
         return _baseTokenURI;
     }
-} 
+}
